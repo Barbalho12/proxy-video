@@ -26,7 +26,7 @@ class UDPClient {
 	static double soma = 0;
 	
 	public static void main(String args[]) throws Exception {
-		ipSend = InetAddress.getByName("localhost");
+		ipSend = InetAddress.getByName("10.0.0.1");
 		
 		if(args.length == 1){
 			portReceiver = Integer.valueOf(args[0]);
@@ -37,6 +37,7 @@ class UDPClient {
 		if(args.length == 3){
 			portSend = Integer.valueOf(args[2]);
 		}
+
 		
 		
 		serverSocket = new DatagramSocket(portReceiver);

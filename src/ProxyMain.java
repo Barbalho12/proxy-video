@@ -1,6 +1,7 @@
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.SocketException;
 import java.time.Duration;
 import java.time.Instant;
@@ -8,19 +9,64 @@ import java.util.ArrayList;
 import java.util.List;
 
 class ProxyMain {
-
 	
-	private static DatagramSocket serverSocket;
+	private static int portReceiver = 9000;
+	private static int portWRReceiver = 9001;
+	private static int portSend = 10000;
+	private static InetAddress ipSend;
+
+	private static InetAddress myIp;
+	
+	private static DatagramSocket proxyServerSocket;
 	private static DatagramSocket wrServerSocket;
 	
-	static List<Map> maps = new ArrayList<>();
-	static List<Machine> machines = new ArrayList<>();
-	static List<MediaServer> mediaServers = new ArrayList<>();
+	private static List<Map> maps = new ArrayList<>();
+	private static List<Machine> machines = new ArrayList<>();
+	private static List<MediaServer> mediaServers = new ArrayList<>();
+	
+	private static byte[] wrData = new byte[1024];
+	private static DatagramPacket wrPacket;
+	private static String entrada = "";
+	private static Machine machine;
+	
+	private static byte[] receiveData = new byte[1024];
+
 
 	public static void main(String args[]) throws Exception {
-		wrServerSocket = new DatagramSocket(9001);
+		myIp = InetAddress.getByName("localhost");
+		ipSend = InetAddress.getByName("localhost");
+		
+//		if(args.length == 1){
+//			myIp = InetAddress.getByName(args[0]);
+//		}
+		if(args.length == 1){
+			portReceiver = Integer.valueOf(args[0]);
+		}
+		if(args.length == 2){
+			ipSend = InetAddress.getByName(args[1]);
+		}
+		if(args.length == 3){
+			portSend = Integer.valueOf(args[2]);
+		}
+		if(args.length == 4){
+			portWRReceiver = Integer.valueOf(args[3]);
+		}
+		
+		wrServerSocket = new DatagramSocket(portWRReceiver);
+		proxyServerSocket = new DatagramSocket(portReceiver);
 		
 		Thread workloadThread = new Thread(){
+		    public void run(){
+		    	System.out.println("waiting..");
+		    	start = Instant.now();
+		    	while(true){
+		    		proxy();
+		    	}
+		    }
+		};
+		
+		
+		Thread proxyFunction = new Thread(){
 		    public void run(){
 		    	while(true){
 		    		receiveWorkload();
@@ -28,46 +74,15 @@ class ProxyMain {
 		    }
 		};
 	
-//		workloadThread.start();
-		workloadThread.run();
-//		Instant end = Instant.now();
-//		Duration timeElapsed = Duration.between(start, end);
-//		System.out.println("Time taken: "+ timeElapsed.toMillis() +" milliseconds");
-		
-		int limit = 10000;
-		
-		serverSocket = new DatagramSocket(9000);
-		byte[] receiveData = new byte[2048];
-		DatagramSocket clientSocket = new DatagramSocket();
-		DatagramPacket receivePacket;
-		Instant start = Instant.now();
-		
-		double soma = 0;	
-		while (limit-- > 0) {
-			if(Duration.between(start, Instant.now()).toMillis() >= 1000){
-				start = Instant.now();
-				System.out.println(((soma/1024.0)*8) + "Kbs");
-				soma = 0;
-			}
-			receivePacket = new DatagramPacket(receiveData, receiveData.length);
-			serverSocket.receive(receivePacket);
-			receivePacket.setPort(10000);
-//			System.out.println(receivePacket.getAddress() +" : " +receivePacket.getPort() +"  ->  " + receivePacket.getSocketAddress() );
-			soma += receivePacket.getLength();
-			clientSocket.send(receivePacket);
-		}
-		workloadThread.join();
-		clientSocket.close();
+		workloadThread.start();
+		proxyFunction.start();
+			
 	}
 	
 	
-	static byte[] wrData = new byte[1024];
-	static DatagramPacket wrPacket;
-	static String entrada = "";
-	static Machine machine;
 	public static void receiveWorkload(){
 		try {
-			System.out.println("wait");
+			
 			
 			wrData = new byte[1024];
 			wrPacket = new DatagramPacket(wrData, wrData.length);
@@ -76,8 +91,11 @@ class ProxyMain {
 			machine = new Machine(wrPacket.getAddress(), wrPacket.getPort());
 			int indexMachine = machines.indexOf(machine);
 			if(indexMachine != -1){
+				System.out.println(entrada);
 				int workload = Double.valueOf(entrada).intValue();
 				machines.get(indexMachine).setWorkload(workload);
+				
+				System.out.println("[RECEIVE] "+wrPacket.getAddress()+":"+wrPacket.getPort()+" -> "+workload);
 			}else{
 				machines.add(machine);
 				System.out.println("Create new machine: "+wrPacket.getAddress()+":"+wrPacket.getPort());
@@ -91,10 +109,46 @@ class ProxyMain {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (NumberFormatException e) {
-			System.err.println(entrada);
+			System.err.println("[ERROR] Workload inválido! ");
+//			System.err.println("[ERROR] Workload inválido: " + entrada);
+//			e.printStackTrace();
+		}
+	}
+	
+	private static DatagramSocket clientSocket;
+	private static DatagramPacket receivePacket;
+	private static Instant start;
+	private static double soma = 0;
+	
+	public static void proxy(){
+		
+		try {
+			
+			receiveData = new byte[2048];
+			clientSocket = new DatagramSocket();
+			
+
+			if(Duration.between(start, Instant.now()).toMillis() >= 1000){
+				start = Instant.now();
+				System.out.println(((soma/1024.0)*8) + "Kbs");
+				soma = 0;
+			}
+			
+			receivePacket = new DatagramPacket(receiveData, receiveData.length);
+			proxyServerSocket.receive(receivePacket);
+			receivePacket.setPort(portSend);
+			receivePacket.setAddress(ipSend);
+			soma += receivePacket.getLength();
+//			new DatagramPacket(sendData, sendData.length, ipSend, 9001);
+			clientSocket.send(receivePacket);
+			
+		} catch (SocketException e) {
+			
+		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+
 	}
 	
 	
